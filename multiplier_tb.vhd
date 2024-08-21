@@ -1,95 +1,97 @@
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
 
-entity MultiCycleMultiplier_TB is
-end MultiCycleMultiplier_TB;
+entity Multiplier16x16_TB is
+end Multiplier16x16_TB;
 
-architecture Behavioral of MultiCycleMultiplier_TB is
-    -- Component Declaration
-    component MultiCycleMultiplier
-        Port ( Clock    : in  std_logic;
-               Reset    : in  std_logic;
-               A        : in  unsigned(15 downto 0);
-               B        : in  unsigned(15 downto 0);
-               Q        : out unsigned(31 downto 0);
-               Start    : in  std_logic;
-               Complete : out std_logic);
-    end component;
+architecture Behavioral of Multiplier16x16_TB is
+    signal Clock    : STD_LOGIC := '0';
+    signal Reset    : STD_LOGIC := '0';
+    signal A, B     : UNSIGNED(15 downto 0) := (others => '0');
+    signal Q        : UNSIGNED(31 downto 0);
+    signal Start    : STD_LOGIC := '0';
+    signal Complete : STD_LOGIC;
 
-    -- Signal Declarations
-    signal Clock    : std_logic := '0';
-    signal Reset    : std_logic := '0';
-    signal A, B     : unsigned(15 downto 0) := (others => '0');
-    signal Q        : unsigned(31 downto 0);
-    signal Start    : std_logic := '0';
-    signal Complete : std_logic;
+    constant ClockPeriod : time := 10 ns;
 
-    -- Clock period definition
-    constant Clock_period : time := 10 ns;
+    -- Updated test case record type
+    type TestCase is record
+        a, b: unsigned(15 downto 0);
+        expected: unsigned(31 downto 0);
+        description: string(1 to 50);
+    end record;
+
+    -- Updated array of test cases
+    type TestCaseArray is array (natural range <>) of TestCase;
+    constant testCases : TestCaseArray := (
+        ("0000000000000000", "0000000000000000", "00000000000000000000000000000000", "Edge case: 0 * 0                                  "),
+        ("0000000000000001", "0000000000000000", "00000000000000000000000000000000", "Edge case: 1 * 0                                  "),
+        ("1111111111111111", "1111111111111111", "11111111111111100000000000000001", "Edge case: 65535 * 65535 (max * max)              "),
+        ("0000000000000101", "0000000000000011", "00000000000000000000000000001111", "Simple case: 5 * 3                                "),
+        ("0000000011111111", "0000000011111111", "00000000000000001111111000000001", "Larger number: 255 * 255                          "),
+        ("1111111111111111", "0000000000000001", "00000000000000001111111111111111", "Boundary case: 65535 * 1 (max * 1)                "),
+        ("1000000000000000", "0000000000000010", "00000000000000010000000000000000", "Boundary case: 32768 * 2 (middle * 2)             "),
+		  ("1000000000000000", "1000000000000000", "01000000000000000000000000000000", "Carry over case (by 1 value): 32768 * 32768       "),
+        ("0010011100001111", "0010011100001111", "00000101111101011001001011100001", "Carry over case: 9999 * 9999                      ")
+    );
 
 begin
     -- Instantiate the Unit Under Test (UUT)
-    UUT: MultiCycleMultiplier port map (
-        Clock => Clock,
-        Reset => Reset,
-        A => A,
-        B => B,
-        Q => Q,
-        Start => Start,
-        Complete => Complete
-    );
+    UUT: entity work.Multiplier16x16
+        port map (
+            Clock    => Clock,
+            Reset    => Reset,
+            A        => A,
+            B        => B,
+            Q        => Q,
+            Start    => Start,
+            Complete => Complete
+        );
 
     -- Clock process
-    Clock_process: process
+    ClockProcess: process
     begin
         Clock <= '0';
-        wait for Clock_period/2;
+        wait for ClockPeriod/2;
         Clock <= '1';
-        wait for Clock_period/2;
+        wait for ClockPeriod/2;
     end process;
 
     -- Stimulus process
-    Stimulus_process: process
+    StimulusProcess: process
     begin
-        -- Initialize
+        -- Reset
         Reset <= '1';
-        wait for Clock_period*2;
+        wait for ClockPeriod*2;
         Reset <= '0';
-        wait for Clock_period;
+        wait for ClockPeriod;
 
-        -- Test case 1: 5 * 3
-        A <= to_unsigned(5, 16);
-        B <= to_unsigned(3, 16);
-        Start <= '1';
-        wait for Clock_period;
-        Start <= '0';
-        wait until Complete = '1';
-        assert Q = 15 report "Test case 1 failed!" severity error;
-        wait for Clock_period*2;
+        -- Run test cases
+        for i in testCases'range loop
+            -- Set inputs
+            A <= testCases(i).a;
+            B <= testCases(i).b;
 
-        -- Test case 2: 255 * 255
-        A <= to_unsigned(255, 16);
-        B <= to_unsigned(255, 16);
-        Start <= '1';
-        wait for Clock_period;
-        Start <= '0';
-        wait until Complete = '1';
-        assert Q = 65025 report "Test case 2 failed!" severity error;
-        wait for Clock_period*2;
+            -- Start multiplication
+            Start <= '1';
+            wait for ClockPeriod;
+            Start <= '0';
 
-        -- Test case 3: 1000 * 2000
-        A <= to_unsigned(1000, 16);
-        B <= to_unsigned(2000, 16);
-        Start <= '1';
-        wait for Clock_period;
-        Start <= '0';
-        wait until Complete = '1';
-        assert Q = 2000000 report "Test case 3 failed!" severity error;
-        wait for Clock_period*2;
+            -- Wait for completion
+            wait until Complete = '1';
 
-        -- End simulation
-        report "Simulation finished successfully";
+            -- Check result
+            assert Q = testCases(i).expected
+                report "Test case " & integer'image(i) & " failed: " & testCases(i).description
+                severity error;
+
+            -- Wait before next test case
+            wait for ClockPeriod*2;
+        end loop;
+
+        -- Add these lines after the loop
+        report "Simulation finished" severity note;
         wait;
     end process;
 
