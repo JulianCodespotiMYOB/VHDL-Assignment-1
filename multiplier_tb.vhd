@@ -1,98 +1,177 @@
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+library ieee;
+  use ieee.std_logic_1164.all;
+  use ieee.numeric_std.all;
 
-entity Multiplier16x16_TB is
-end Multiplier16x16_TB;
+library std;
+  use std.textio.all;
 
-architecture Behavioral of Multiplier16x16_TB is
-    signal Clock    : STD_LOGIC := '0';
-    signal Reset    : STD_LOGIC := '0';
-    signal A, B     : UNSIGNED(15 downto 0) := (others => '0');
-    signal Q        : UNSIGNED(31 downto 0);
-    signal Start    : STD_LOGIC := '0';
-    signal Complete : STD_LOGIC;
+entity testbench is
+end entity;
 
-    constant ClockPeriod : time := 10 ns;
+architecture behavior of testbench is
 
-    -- Updated test case record type
-    type TestCase is record
-        a, b: unsigned(15 downto 0);
-        expected: unsigned(31 downto 0);
-        description: string(1 to 50);
-    end record;
+  -- ports of UUT
+  signal Clock    : STD_LOGIC             := '0';
+  signal A        : unsigned(15 downto 0) := (others => '0');
+  signal B        : unsigned(15 downto 0) := (others => '0');
+  signal Q        : unsigned(31 downto 0) := (others => '0');
+  signal Start    : STD_LOGIC             := '0';
+  signal Complete : STD_LOGIC             := '0';
+  signal reset    : STD_LOGIC             := '0';
+  --  File to log results to
+  file logFile : TEXT;
 
-    -- Updated array of test cases
-    type TestCaseArray is array (natural range <>) of TestCase;
-    constant testCases : TestCaseArray := (
-        ("0000000000000000", "0000000000000000", "00000000000000000000000000000000", "Edge case: 0 * 0                                  "),
-        ("0000000000000001", "0000000000000000", "00000000000000000000000000000000", "Edge case: 1 * 0                                  "),
-        ("1111111111111111", "1111111111111111", "11111111111111100000000000000001", "Edge case: 65535 * 65535 (max * max)              "),
-        ("0000000000000101", "0000000000000011", "00000000000000000000000000001111", "Simple case: 5 * 3                                "),
-        ("0000000011111111", "0000000011111111", "00000000000000001111111000000001", "Larger number: 255 * 255                          "),
-        ("1111111111111111", "0000000000000001", "00000000000000001111111111111111", "Boundary case: 65535 * 1 (max * 1)                "),
-        ("1000000000000000", "0000000000000010", "00000000000000010000000000000000", "Boundary case: 32768 * 2 (middle * 2)             "),
-		  ("1000000000000000", "1000000000000000", "01000000000000000000000000000000", "Carry over case (by 1 value): 32768 * 32768       "),
-        ("0010011100001111", "0010011100001111", "00000101111101011001001011100001", "Carry over case: 9999 * 9999                      ")
-    );
+  constant clockHigh   : TIME := 5 ns;
+  constant clockLow    : TIME := 5 ns;
+  constant clockPeriod : TIME := clockHigh + clockLow;
+
+  signal simComplete : BOOLEAN := false;
 
 begin
-    -- Instantiate the Unit Under Test (UUT)
-    UUT: entity work.Multiplier16x16
-        port map (
-            Clock    => Clock,
-            Reset    => Reset,
-            A        => A,
-            B        => B,
-            Q        => Q,
-            Start    => Start,
-            Complete => Complete
-        );
 
-    -- Clock process
-    ClockProcess: process
+  --****************************************************
+  -- Clock Generator
+  --
+  ClockGen: process
+
+  begin
+    while not simComplete loop
+      clock <= '0';
+      wait for clockHigh;
+      clock <= '1';
+      wait for clockLow;
+    end loop;
+
+    wait; -- stop process looping
+  end process;
+
+  --****************************************************
+  -- Stimulus Generator
+  --
+
+  Stimulus: process
+    --*******************************************************
+    -- Write a message to the logfile & transcript
+    --
+    --  message => string to write
+    --
+    procedure writeMsg(message : STRING
+                      ) is
+
+      variable assertMsgBuffer : STRING(1 to 4096); -- string for assert message
+      variable writeMsgBuffer  : line;              -- buffer for write messages
+
     begin
-        Clock <= '0';
-        wait for ClockPeriod/2;
-        Clock <= '1';
-        wait for ClockPeriod/2;
-    end process;
+      write(writeMsgBuffer, message);
+      assertMsgBuffer(writeMsgBuffer.all'RANGE) := writeMsgBuffer.all;
+      writeline(logFile, writeMsgBuffer);
+      deallocate(writeMsgBuffer);
+      report assertMsgBuffer severity note;
+    end procedure;
 
-    -- Stimulus process
-    StimulusProcess: process
+    procedure doMultiply(stimulusA : unsigned(15 downto 0);
+                         stimulusB : unsigned(15 downto 0)
+                        ) is
+
+      variable assertMsgBuffer : STRING(1 to 4096); -- string for assert message
+      variable writeMsgBuffer  : line;              -- buffer for write messages
+      variable expectedQ       : unsigned(31 downto 0);
+      variable actualQ         : unsigned(31 downto 0);
+
     begin
-        -- Reset
-        Reset <= '1';
-        wait for ClockPeriod*2;
-        Reset <= '0';
-        wait for ClockPeriod;
 
-        -- Run test cases
-        for i in testCases'range loop
-            -- Set inputs
-            A <= testCases(i).a;
-            B <= testCases(i).b;
+      write(writeMsgBuffer, STRING'("A = "), left);
+      write(writeMsgBuffer, to_integer(stimulusA));
+      write(writeMsgBuffer, STRING'(", B = "), left);
+      write(writeMsgBuffer, to_integer(stimulusB));
 
-            -- Start multiplication
-            Start <= '1';
-            wait for ClockPeriod;
-            Start <= '0';
+      --  Fill out with your test sequence for the multiplier
+      A <= stimulusA;
+      B <= stimulusB;
 
-            -- Wait for completion
-            wait until Complete = '1';
+      Start <= '1';
+      wait until rising_edge(Clock);
+      Start <= '0';
 
-            -- Check result
-            assert Q = testCases(i).expected
-                report "Test case " & integer'image(i) & " failed: " & testCases(i).description
-                severity error;
+      wait until complete = '1';
+      wait until rising_edge(Clock);
 
-            -- Wait before next test case
-            wait for ClockPeriod*2;
-        end loop;
+      expectedQ := stimulusA * stimulusB;
+      actualQ := Q;
 
-        -- Add these lines after the loop
-        report "Simulation finished" severity note;
-        wait;
-    end process;
+      -- Check result
+      assert actualQ = expectedQ
+        report "Multiplication error: expected " & INTEGER'image(to_integer(expectedQ)) & ", but got " & INTEGER'image(to_integer(actualQ))
+        severity error;
 
-end Behavioral;
+      write(writeMsgBuffer, STRING'(", Q = "), left);
+      write(writeMsgBuffer, to_integer(actualQ));
+      if actualQ = expectedQ then
+        write(writeMsgBuffer, STRING'(" (Correct)"));
+      else
+        write(writeMsgBuffer, STRING'(" (Incorrect, expected "));
+        write(writeMsgBuffer, to_integer(expectedQ));
+        write(writeMsgBuffer, STRING'(")"));
+      end if;
+
+      assertMsgBuffer(writeMsgBuffer.all'RANGE) := writeMsgBuffer.all;
+      writeline(logFile, writeMsgBuffer);
+      deallocate(writeMsgBuffer);
+      report assertMsgBuffer severity note;
+    end procedure;
+
+    variable openStatus : file_open_status;
+
+  begin -- Stimulus
+
+    file_open(openStatus, logFile, "results.txt", WRITE_MODE);
+
+    writeMsg(STRING'("Simulation starting."));
+
+    -- initial reset
+    A <= (others => '0');
+    B <= (others => '0');
+    Start <= '0';
+
+    reset <= '1';
+    wait for 10 ns;
+    reset <= '0';
+    wait until falling_edge(Clock);
+    -- Test cases - modify as needed.
+    doMultiply("0000000000000000", "0000000000000000"); -- 0 * 0
+    doMultiply("0000000000000000", "1111111111111111"); -- 0 * 65535
+    doMultiply("0000000000000001", "0000000000000000"); -- 1 * 0
+    doMultiply("0000000000000001", "0000000000000001"); -- 1 * 1
+    doMultiply("0000000000000001", "1111111111111111"); -- 1 * 65535
+    doMultiply("1111111111111111", "0000000000000001"); -- 65535 * 1
+    doMultiply("0000000100000000", "0000000011111111"); -- 256 * 255
+    doMultiply("0000000011111111", "0000000011111111"); -- 255 * 255
+    doMultiply("1111111111111111", "1111111100000011"); -- 65535 * 65283
+    doMultiply("1111111111111111", "1111111100000010"); -- 65535 * 65282
+    doMultiply("1000000000000000", "1000000000000000"); -- 32768 * 32768
+    doMultiply("1111111111111111", "1111111111111111"); -- 65535 * 65535
+
+    wait for 20 ns;
+
+    writeMsg(STRING'("Simulation completed."));
+
+    file_close(logFile);
+
+    simComplete <= true; -- stop clock & simulation
+
+    wait;
+
+  end process;
+
+  uut: entity work.MultiplierMultiCycle
+    port map (
+      reset    => reset,
+      Clock    => Clock,
+      A        => A,
+      B        => B,
+      Q        => Q,
+      Start    => Start,
+      Complete => Complete
+    );
+
+end architecture;
